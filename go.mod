@@ -1,0 +1,1 @@
+module githubm.com/brandonyeoxg/go-aws-pubsub
