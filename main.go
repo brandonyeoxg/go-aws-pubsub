@@ -21,15 +21,18 @@ func main() {
 	}
 
 	dispatcher.Init(sess)
-	jobqueue.Init(sess)
+	jobqueue.Init(sess, dispatcher.QueueName)
 
-	isDispatcher := flag.Bool("Is dispatcher", true, "if the current program is a dispatcher")
+	isDispatcher := flag.Bool("d", false, "if the current program is a dispatcher")
 	flag.Parse()
 
-	if *isDispatcher {
+	if *isDispatcher == true {
+		fmt.Println("Running Dispatcher")
 		dispatcher.Dispatch("Test Message")
 	} else {
-
+		fmt.Println("Running Jobqueue")
+		// Consume from the queue
+		jobqueue.Start()
 	}
 }
 
@@ -41,4 +44,15 @@ func initAwsSession() (client.ConfigProvider, error) {
 		},
 	)
 	return sess, err
+}
+
+func genFakeMessages(n int) []string {
+	var fakeMsg []string
+
+	for i := 0; i < n; i++ {
+		genMsg := fmt.Sprintf("Generated Test Message %d\n", i)
+		fakeMsg = append(fakeMsg, genMsg)
+	}
+
+	return fakeMsg
 }

@@ -2,6 +2,7 @@ package dispatcher
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/arn"
@@ -21,6 +22,8 @@ var region string = "ap-southeast-1"
 var topicArn string
 var queueArn string
 
+var timeout int
+
 const TopicName string = "sns-dispatch"
 const QueueName string = "sqs-jobqueue"
 
@@ -30,6 +33,8 @@ func Init(sess client.ConfigProvider) {
 	snsSvc = sns.New(sess)
 	sqsSvc = sqs.New(sess)
 	stsSvc = sts.New(sess)
+
+	timeout = 20
 
 	if err := getCallerIdentity(); err != nil {
 		fmt.Println("Unable to getCallerIdentity:", err)
@@ -51,11 +56,16 @@ func Init(sess client.ConfigProvider) {
 }
 
 func Dispatch(msg string) {
-	snsSvc.Publish(&sns.PublishInput{
-		Message: aws.String(msg),
+	pubRes, err := snsSvc.Publish(&sns.PublishInput{
+		Message:  aws.String(msg),
+		TopicArn: aws.String(topicArn),
 	})
 
-	fmt.Println("Dispatched message")
+	if err != nil {
+		fmt.Println("Error Dispatch:", err)
+	}
+
+	fmt.Println("Dispatched message", *pubRes.MessageId)
 }
 
 func getCallerIdentity() error {
@@ -151,9 +161,11 @@ func createQueue(queueName string, input sns.SubscribeInput) (string, error) {
 	queueArn = fmt.Sprintf("arn:aws:sqs:%s:%s:%s", region, accountID, queueName)
 	res, err := sqsSvc.CreateQueue(&sqs.CreateQueueInput{
 		QueueName: aws.String(queueName),
+
 		Attributes: map[string]*string{
-			"DelaySeconds":           aws.String("60"),
-			"MessageRetentionPeriod": aws.String("86400"),
+			"DelaySeconds":                  aws.String("60"),
+			"MessageRetentionPeriod":        aws.String("86400"),
+			"ReceiveMessageWaitTimeSeconds": aws.String(strconv.Itoa(timeout)),
 			"Policy": aws.String(fmt.Sprintf(`{
 				"Version": "2012-10-17",
 				"Statement": [
