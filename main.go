@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -21,6 +22,15 @@ func main() {
 
 	dispatcher.Init(sess)
 	jobqueue.Init(sess)
+
+	isDispatcher := flag.Bool("Is dispatcher", true, "if the current program is a dispatcher")
+	flag.Parse()
+
+	if *isDispatcher {
+		dispatcher.Dispatch("Test Message")
+	} else {
+
+	}
 }
 
 func initAwsSession() (client.ConfigProvider, error) {

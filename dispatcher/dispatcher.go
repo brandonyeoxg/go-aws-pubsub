@@ -50,6 +50,14 @@ func Init(sess client.ConfigProvider) {
 	fmt.Println("Dispatcher initialised")
 }
 
+func Dispatch(msg string) {
+	snsSvc.Publish(&sns.PublishInput{
+		Message: aws.String(msg),
+	})
+
+	fmt.Println("Dispatched message")
+}
+
 func getCallerIdentity() error {
 	result, err := stsSvc.GetCallerIdentity(&sts.GetCallerIdentityInput{})
 	if err != nil {
@@ -73,14 +81,43 @@ func initSubscription(subscriptions map[string]sns.SubscribeInput) error {
 	}
 
 	for _, subscription := range res.Subscriptions {
-		subscriptionName, err := getResourceFromARN(*subscription.SubscriptionArn)
+		endpointName, err := getResourceFromARN(*subscription.Endpoint)
+		// nameIdx := strings.LastIndex(subscriptionName, ":")
+		// if nameIdx != -1 {
+		// 	subscriptionName = subscriptionName[:nameIdx]
+		// }
+		fmt.Println("Endpoint name is:", endpointName)
 		if err != nil {
 			return err
 		}
 
-		_, ok := subscriptions[subscriptionName]
+		_, ok := subscriptions[endpointName]
+
+		// Check if subscription is online
+		switch *subscription.Protocol {
+		case "sqs":
+			lres, err := sqsSvc.ListQueues(
+				&sqs.ListQueuesInput{
+					QueueNamePrefix: aws.String(endpointName),
+				},
+			)
+			if err != nil {
+				fmt.Println("Error initSubscription: sqs.ListQueues", err)
+				return err
+			}
+			if len(lres.QueueUrls) == 0 {
+				// Remove the subscription, could be an old subscription
+				snsSvc.Unsubscribe(&sns.UnsubscribeInput{
+					SubscriptionArn: subscription.SubscriptionArn,
+				})
+				ok = false
+				fmt.Println("Unsubscribing from topic with SubscriptionArn:", *subscription.SubscriptionArn)
+			}
+		}
+
 		if ok {
-			delete(subscriptions, subscriptionName)
+			delete(subscriptions, endpointName)
+			fmt.Println("Skipping creation of subscription", endpointName)
 		}
 	}
 
@@ -88,33 +125,11 @@ func initSubscription(subscriptions map[string]sns.SubscribeInput) error {
 	for k, v := range subscriptions {
 		switch *v.Protocol {
 		case "sqs":
-			queueURL, err := createQueue(k, v)
+			_, err := createQueue(k, v)
 			if err != nil {
 				return err
 			}
 			subscribeToTopic(v, queueArn)
-			confirmMsg, err := sqsSvc.ReceiveMessage(&sqs.ReceiveMessageInput{
-				QueueUrl: aws.String(queueURL),
-			})
-			if err != nil {
-				fmt.Println("Error initSubscription: sqs.ReceiveMessage:", err)
-				return err
-			}
-			if len(confirmMsg.Messages) != 1 {
-				fmt.Println("Error initSubscription: confirmMsg.Messages:", err)
-				return err
-			}
-			confirmRes, err := snsSvc.ConfirmSubscription(&sns.ConfirmSubscriptionInput{
-				TopicArn: aws.String(topicArn),
-				Token:    confirmMsg.Messages[0].Body,
-			})
-
-			if err != nil {
-				fmt.Println("Error initSubscription: sns.ConfirnmSubscription:", err)
-				return err
-			}
-
-			fmt.Println("Subscription ARN:", confirmRes.SubscriptionArn, "has been confirmed")
 		}
 	}
 
@@ -125,7 +140,7 @@ func subscribeToTopic(input sns.SubscribeInput, resourceArn string) error {
 	input.Endpoint = aws.String(resourceArn)
 	res, err := snsSvc.Subscribe(&input)
 	if err != nil {
-		fmt.Println("Error subscribeTopic:", err)
+		fmt.Println("Error subscribeToTopic:", err)
 		return err
 	}
 	fmt.Println("Subscribed Resource ARN:", resourceArn, "to Topic ARN:", *input.TopicArn, "with Subscription ARN:", *res.SubscriptionArn)
@@ -163,6 +178,8 @@ func createQueue(queueName string, input sns.SubscribeInput) (string, error) {
 		return "", err
 	}
 
+	fmt.Println("SQS created")
+
 	return *res.QueueUrl, nil
 }
 
@@ -190,6 +207,7 @@ func initTopic(name string) error {
 		}
 		if hasTopic {
 			topicArn = *t.TopicArn
+			fmt.Println("Skipping creation of Topic", TopicName)
 			return nil
 		}
 	}
