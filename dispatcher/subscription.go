@@ -27,10 +27,6 @@ func initSubscription(subscriptions map[string]sns.SubscribeInput) error {
 
 	for _, subscription := range res.Subscriptions {
 		endpointName, err := getResourceFromARN(*subscription.Endpoint)
-		// nameIdx := strings.LastIndex(subscriptionName, ":")
-		// if nameIdx != -1 {
-		// 	subscriptionName = subscriptionName[:nameIdx]
-		// }
 		fmt.Println("Endpoint name is:", endpointName)
 		if err != nil {
 			return err

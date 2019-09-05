@@ -28,6 +28,28 @@ var timeout int
 const TopicName string = "sns-dispatch"
 const QueueName string = "sqs-jobqueue"
 
+type Messager interface {
+	Message() (map[string]*sns.MessageAttributeValue, string)
+}
+
+type StartJobAttribute struct {
+	JobID     string `json:"jobID"`
+	EngineID  string `json:"engineID"`
+	ProjectID string `json:"projectID"`
+}
+
+type DefaultStartJobMessage struct {
+	StartJobAttribute
+}
+
+func (msg *DefaultStartJobMessage) Message() (map[string]*sns.MessageAttributeValue, string) {
+	msgAttributes := make(map[string]*sns.MessageAttributeValue)
+	msgAttributes["jobID"] = &sns.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String(msg.JobID)}
+	msgAttributes["engineID"] = &sns.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String(msg.EngineID)}
+	msgAttributes["projectID"] = &sns.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String(msg.ProjectID)}
+	return msgAttributes, "start"
+}
+
 // Init handles the startup of required infrastructure for the pub sub to work
 // If AWS sns is not setup, it will create it.
 func Init(sess client.ConfigProvider) {
@@ -56,10 +78,12 @@ func Init(sess client.ConfigProvider) {
 	fmt.Println("Dispatcher initialised")
 }
 
-func Dispatch(msg string) {
+func Dispatch(msg Messager) {
+	msgAttrs, rawmsg := msg.Message()
 	pubRes, err := snsSvc.Publish(&sns.PublishInput{
-		Message:  aws.String(msg),
-		TopicArn: aws.String(topicArn),
+		MessageAttributes: msgAttrs,
+		Message:           aws.String(rawmsg),
+		TopicArn:          aws.String(topicArn),
 	})
 
 	if err != nil {
@@ -75,7 +99,10 @@ func RunDemo() {
 	for {
 		select {
 		case t := <-ticker.C:
-			Dispatch(fmt.Sprintf("Test Message %d", t.Unix()))
+			jobMsg := DefaultStartJobMessage{
+				StartJobAttribute{EngineID: "default", ProjectID: "default", JobID: fmt.Sprintf("Text Message %d", t.Unix())},
+			}
+			Dispatch(&jobMsg)
 		}
 	}
 }
