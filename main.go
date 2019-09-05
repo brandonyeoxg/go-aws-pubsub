@@ -20,17 +20,16 @@ func main() {
 		return
 	}
 
-	dispatcher.Init(sess)
-	jobqueue.Init(sess, dispatcher.QueueName)
-
 	isDispatcher := flag.Bool("d", false, "if the current program is a dispatcher")
 	flag.Parse()
 
 	if *isDispatcher == true {
+		dispatcher.Init(sess)
 		fmt.Println("Running Dispatcher")
 		// dispatcher.Dispatch("Test Message")
 		dispatcher.RunDemo()
 	} else {
+		jobqueue.Init(sess, dispatcher.QueueName)
 		fmt.Println("Running Jobqueue")
 		// Consume from the queue
 		jobqueue.Start()
