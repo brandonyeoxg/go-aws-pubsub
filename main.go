@@ -28,7 +28,8 @@ func main() {
 
 	if *isDispatcher == true {
 		fmt.Println("Running Dispatcher")
-		dispatcher.Dispatch("Test Message")
+		// dispatcher.Dispatch("Test Message")
+		dispatcher.RunDemo()
 	} else {
 		fmt.Println("Running Jobqueue")
 		// Consume from the queue

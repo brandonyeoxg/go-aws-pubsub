@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/arn"
@@ -68,6 +69,17 @@ func Dispatch(msg string) {
 	fmt.Println("Dispatched message", *pubRes.MessageId)
 }
 
+func RunDemo() {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case t := <-ticker.C:
+			Dispatch(fmt.Sprintf("Test Message %d", t.Unix()))
+		}
+	}
+}
+
 func getCallerIdentity() error {
 	result, err := stsSvc.GetCallerIdentity(&sts.GetCallerIdentityInput{})
 	if err != nil {
@@ -76,84 +88,6 @@ func getCallerIdentity() error {
 	}
 
 	accountID = *result.Account
-	return nil
-}
-
-func initSubscription(subscriptions map[string]sns.SubscribeInput) error {
-	res, err := snsSvc.ListSubscriptionsByTopic(
-		&sns.ListSubscriptionsByTopicInput{
-			TopicArn: aws.String(topicArn),
-		},
-	)
-	if err != nil {
-		fmt.Println("Error initSubscription:", err)
-		return err
-	}
-
-	for _, subscription := range res.Subscriptions {
-		endpointName, err := getResourceFromARN(*subscription.Endpoint)
-		// nameIdx := strings.LastIndex(subscriptionName, ":")
-		// if nameIdx != -1 {
-		// 	subscriptionName = subscriptionName[:nameIdx]
-		// }
-		fmt.Println("Endpoint name is:", endpointName)
-		if err != nil {
-			return err
-		}
-
-		_, ok := subscriptions[endpointName]
-
-		// Check if subscription is online
-		switch *subscription.Protocol {
-		case "sqs":
-			lres, err := sqsSvc.ListQueues(
-				&sqs.ListQueuesInput{
-					QueueNamePrefix: aws.String(endpointName),
-				},
-			)
-			if err != nil {
-				fmt.Println("Error initSubscription: sqs.ListQueues", err)
-				return err
-			}
-			if len(lres.QueueUrls) == 0 {
-				// Remove the subscription, could be an old subscription
-				snsSvc.Unsubscribe(&sns.UnsubscribeInput{
-					SubscriptionArn: subscription.SubscriptionArn,
-				})
-				ok = false
-				fmt.Println("Unsubscribing from topic with SubscriptionArn:", *subscription.SubscriptionArn)
-			}
-		}
-
-		if ok {
-			delete(subscriptions, endpointName)
-			fmt.Println("Skipping creation of subscription", endpointName)
-		}
-	}
-
-	// Create subscriptions
-	for k, v := range subscriptions {
-		switch *v.Protocol {
-		case "sqs":
-			_, err := createQueue(k, v)
-			if err != nil {
-				return err
-			}
-			subscribeToTopic(v, queueArn)
-		}
-	}
-
-	return nil
-}
-
-func subscribeToTopic(input sns.SubscribeInput, resourceArn string) error {
-	input.Endpoint = aws.String(resourceArn)
-	res, err := snsSvc.Subscribe(&input)
-	if err != nil {
-		fmt.Println("Error subscribeToTopic:", err)
-		return err
-	}
-	fmt.Println("Subscribed Resource ARN:", resourceArn, "to Topic ARN:", *input.TopicArn, "with Subscription ARN:", *res.SubscriptionArn)
 	return nil
 }
 
@@ -193,59 +127,6 @@ func createQueue(queueName string, input sns.SubscribeInput) (string, error) {
 	fmt.Println("SQS created")
 
 	return *res.QueueUrl, nil
-}
-
-func getSubscriptions() map[string]sns.SubscribeInput {
-	return map[string]sns.SubscribeInput{
-		QueueName: sns.SubscribeInput{Protocol: aws.String("sqs"), TopicArn: aws.String(topicArn)},
-	}
-}
-
-func initTopic(name string) error {
-	res, err := snsSvc.ListTopics(nil)
-
-	if err != nil {
-		topicArn, err = createTopic(name)
-		if err != nil {
-			fmt.Println("Error initTopic:", err)
-			return err
-		}
-	}
-
-	for _, t := range res.Topics {
-		hasTopic, err := isResourceExist(*t.TopicArn, TopicName)
-		if err != nil {
-			return err
-		}
-		if hasTopic {
-			topicArn = *t.TopicArn
-			fmt.Println("Skipping creation of Topic", TopicName)
-			return nil
-		}
-	}
-
-	// if we cant find the topic name, we will have to create
-	topicArn, err = createTopic(name)
-	fmt.Println("New Topic", topicArn, "created!")
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func createTopic(name string) (string, error) {
-	res, err := snsSvc.CreateTopic(
-		&sns.CreateTopicInput{
-			Name: aws.String(name),
-		},
-	)
-	if err != nil {
-		fmt.Println("Error", err)
-		return "", err
-	}
-
-	return *res.TopicArn, nil
 }
 
 func isResourceExist(arn string, wantName string) (bool, error) {
