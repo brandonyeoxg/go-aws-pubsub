@@ -1,6 +1,7 @@
 package jobqueue
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -17,6 +18,24 @@ var queueURL string
 var sqsSvc *sqs.SQS
 
 var localDispatcher dispatcher
+
+type MessageAttributeValue struct {
+	DataType string `json:"Type"`
+	Value    string `json:"Value"`
+}
+
+type MessageBodyField struct {
+	Type           string    `json:"Notification"`
+	MessageID      string    `json:"MessageID"`
+	TopicARN       string    `json:"TopicArn"`
+	Message        string    `json:"Message"`
+	Timestamp      time.Time `json:"Timestamp"`
+	UnsubscribeURL string    `json:"UnsubscribeURL"`
+
+	// SNS published MessageAttributes resides inthe body of the message
+	// https://stackoverflow.com/a/44243054
+	MessageAttributes map[string]MessageAttributeValue `json:"MessageAttributes"`
+}
 
 func Init(sess client.ConfigProvider, targetQueue string) {
 	fmt.Println("Jobqueue initialised")
@@ -71,10 +90,20 @@ func handleJob() {
 	fmt.Printf("Received %d messages.\n", len(res.Messages))
 
 	if len(res.Messages) > 0 {
-		fmt.Println(res.Messages)
+		// Checks if the job is one that start
+		var msgfield MessageBodyField
+		json.Unmarshal([]byte(*res.Messages[0].Body), &msgfield)
 
+		fmt.Println("Msgfield", msgfield)
+		switch msgfield.Message {
+		case "start":
+			// Start transcription
+			startTranscription(msgfield.MessageAttributes)
+		default:
+			fmt.Println("Error handleJob: invalid message found")
+		}
 		// Push into the localDispatcher to be processed
-		localDispatcher.Work <- &transcriptionWork{JobID: *res.Messages[0].Body}
+		// localDispatcher.Work <- &transcriptionWork{JobID: *res.Messages[0].Body}
 
 		// Delete the message
 		resDel, err := sqsSvc.DeleteMessage(&sqs.DeleteMessageInput{
@@ -87,4 +116,23 @@ func handleJob() {
 		}
 		fmt.Println("Message Deleted:", resDel)
 	}
+}
+
+func startTranscription(msgAttrs map[string]MessageAttributeValue) {
+	// Construct the job to start transcription
+	// if err := msgAttrs["jobID"].Validate(); err != nil {
+	// 	fmt.Println("Error startTranscription:", err)
+	// 	return
+	// }
+	// if err := msgAttrs["engineID"].Validate(); err != nil {
+	// 	fmt.Println("Error startTranscription", err)
+	// 	return
+	// }
+	// if err := msgAttrs["projectID"].Validate(); err != nil {
+	// 	fmt.Println("Error startTranscription", err)
+	// 	return
+	// }
+
+	// fmt.Println("Dispatching with transcriptionJob", msgAttrs["jobID"].Value)
+	localDispatcher.Work <- &transcriptionWork{JobID: msgAttrs["jobID"].Value}
 }
