@@ -19,13 +19,13 @@ func initTopic(name string) error {
 	}
 
 	for _, t := range res.Topics {
-		hasTopic, err := isResourceExist(*t.TopicArn, TopicName)
+		hasTopic, err := isResourceExist(*t.TopicArn, Config.TopicName)
 		if err != nil {
 			return err
 		}
 		if hasTopic {
 			topicArn = *t.TopicArn
-			fmt.Println("Skipping creation of Topic", TopicName)
+			fmt.Println("Skipping creation of Topic", Config.TopicName)
 			return nil
 		}
 	}

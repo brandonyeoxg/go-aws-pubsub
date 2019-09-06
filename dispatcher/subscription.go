@@ -10,7 +10,7 @@ import (
 
 func getSubscriptions() map[string]sns.SubscribeInput {
 	return map[string]sns.SubscribeInput{
-		QueueName: sns.SubscribeInput{Protocol: aws.String("sqs"), TopicArn: aws.String(topicArn)},
+		Config.QueueName: sns.SubscribeInput{Protocol: aws.String("sqs"), TopicArn: aws.String(topicArn)},
 	}
 }
 

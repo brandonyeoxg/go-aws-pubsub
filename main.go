@@ -4,15 +4,22 @@ import (
 	"flag"
 	"fmt"
 
+	"github.com/brandonyeoxg/go-aws-pubsub/dispatcher"
+	"github.com/brandonyeoxg/go-aws-pubsub/jobqueue"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/client"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/brandonyeoxg/go-aws-pubsub/dispatcher"
-	"github.com/brandonyeoxg/go-aws-pubsub/jobqueue"
+
+	"github.com/spf13/viper"
 )
 
 func main() {
+	if err := initConfig(); err != nil {
+		return
+	}
+
 	sess, err := initAwsSession()
 
 	if err != nil {
@@ -27,9 +34,9 @@ func main() {
 		dispatcher.Init(sess)
 		fmt.Println("Running Dispatcher")
 		// dispatcher.Dispatch("Test Message")
-		dispatcher.RunDemo()
+		// dispatcher.RunDemo()
 	} else {
-		jobqueue.Init(sess, dispatcher.QueueName)
+		jobqueue.Init(sess, dispatcher.Config.QueueName)
 		fmt.Println("Running Jobqueue")
 		// Consume from the queue
 		jobqueue.Start()
@@ -55,4 +62,17 @@ func genFakeMessages(n int) []string {
 	}
 
 	return fakeMsg
+}
+
+func initConfig() error {
+	viper.SetConfigName("config")
+	viper.AddConfigPath("./")
+	viper.SetConfigType("toml")
+
+	err := viper.ReadInConfig()
+	if err != nil {
+		fmt.Println("Error initConfig:", err)
+		return err
+	}
+	return nil
 }

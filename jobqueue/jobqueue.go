@@ -8,6 +8,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/client"
 	"github.com/aws/aws-sdk-go/service/sqs"
+
+	"github.com/spf13/viper"
 )
 
 var accountID string
@@ -18,6 +20,14 @@ var queueURL string
 var sqsSvc *sqs.SQS
 
 var localDispatcher dispatcher
+
+type jobqueueConfig struct {
+	WorkerNum        int   `mapstructure:"worker_num"`
+	PollingDelay     int   `mapstructure:"queue_polling_delay"`
+	MaxJobPerRequest int64 `mapstructure:"max_job_per_request"`
+}
+
+var config jobqueueConfig
 
 type MessageAttributeValue struct {
 	DataType string `json:"Type"`
@@ -38,8 +48,11 @@ type MessageBodyField struct {
 }
 
 func Init(sess client.ConfigProvider, targetQueue string) {
-	fmt.Println("Jobqueue initialised")
-	queueName = targetQueue
+	if err := loadConfig(); err != nil {
+		fmt.Println("Error unable to load config")
+		return
+	}
+	queueName = viper.GetString("dispatcher.aws_sqs_queue_name")
 	sqsSvc = sqs.New(sess)
 
 	resultURL, err := sqsSvc.GetQueueUrl(&sqs.GetQueueUrlInput{
@@ -52,13 +65,13 @@ func Init(sess client.ConfigProvider, targetQueue string) {
 
 	queueURL = *resultURL.QueueUrl
 
-	workerCount := 4
 	// Init the rest of the work queue
-	localDispatcher = newDispatcher(workerCount)
+	localDispatcher = newDispatcher(config.WorkerNum)
+	fmt.Println("Jobqueue initialised")
 }
 
 func Start() {
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(time.Duration(config.PollingDelay) * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
@@ -66,6 +79,14 @@ func Start() {
 			handleJob()
 		}
 	}
+}
+
+func loadConfig() error {
+	if err := viper.UnmarshalKey("jobqueue", &config); err != nil {
+		fmt.Println("Error loadConfig:", err)
+		return err
+	}
+	return nil
 }
 
 func handleJob() {
@@ -77,7 +98,7 @@ func handleJob() {
 		AttributeNames: aws.StringSlice([]string{
 			"SentTimeStamp",
 		}),
-		MaxNumberOfMessages: aws.Int64(1),
+		MaxNumberOfMessages: aws.Int64(config.MaxJobPerRequest),
 		MessageAttributeNames: aws.StringSlice([]string{
 			"All",
 		}),

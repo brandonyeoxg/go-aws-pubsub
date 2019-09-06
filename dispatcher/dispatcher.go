@@ -11,6 +11,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/sns"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/aws/aws-sdk-go/service/sts"
+
+	"github.com/spf13/viper"
 )
 
 var snsSvc *sns.SNS
@@ -18,15 +20,18 @@ var sqsSvc *sqs.SQS
 var stsSvc *sts.STS
 
 var accountID string
-var region string = "ap-southeast-1"
 
 var topicArn string
 var queueArn string
 
-var timeout int
+var Config dispatcherConfig
 
-const TopicName string = "sns-dispatch"
-const QueueName string = "sqs-jobqueue"
+type dispatcherConfig struct {
+	Region     string `mapstructure:"aws_region" validate:"true"`
+	SqsTimeout int    `mapstructure:"aws_sqs_timeout" validate:"true"`
+	TopicName  string `mapstructure:"aws_sns_topic_name" validate:"true"`
+	QueueName  string `mapstructure:"aws_sqs_queue_name" validate:"true"`
+}
 
 type Messager interface {
 	Message() (map[string]*sns.MessageAttributeValue, string)
@@ -53,25 +58,29 @@ func (msg *DefaultStartJobMessage) Message() (map[string]*sns.MessageAttributeVa
 // Init handles the startup of required infrastructure for the pub sub to work
 // If AWS sns is not setup, it will create it.
 func Init(sess client.ConfigProvider) {
+
+	if err := loadConfig(); err != nil {
+		fmt.Println("Unable to loadConfig:", err)
+		return
+	}
+
 	snsSvc = sns.New(sess)
 	sqsSvc = sqs.New(sess)
 	stsSvc = sts.New(sess)
-
-	timeout = 20
 
 	if err := getCallerIdentity(); err != nil {
 		fmt.Println("Unable to getCallerIdentity:", err)
 		return
 	}
 
-	if err := initTopic(TopicName); err != nil {
-		fmt.Println("Unable to initalise Topic", TopicName)
+	if err := initTopic(Config.TopicName); err != nil {
+		fmt.Println("Unable to initalise Topic", Config.TopicName)
 		return
 	}
 
 	subscriptions := getSubscriptions()
 	if err := initSubscription(subscriptions); err != nil {
-		fmt.Println("Unable to initialise Subscription", QueueName)
+		fmt.Println("Unable to initialise Subscription", Config.QueueName)
 		return
 	}
 
@@ -107,6 +116,14 @@ func RunDemo() {
 	}
 }
 
+func loadConfig() error {
+	if err := viper.UnmarshalKey("dispatcher", &Config); err != nil {
+		return err
+	}
+	fmt.Println("Config", Config)
+	return nil
+}
+
 func getCallerIdentity() error {
 	result, err := stsSvc.GetCallerIdentity(&sts.GetCallerIdentityInput{})
 	if err != nil {
@@ -119,14 +136,14 @@ func getCallerIdentity() error {
 }
 
 func createQueue(queueName string, input sns.SubscribeInput) (string, error) {
-	queueArn = fmt.Sprintf("arn:aws:sqs:%s:%s:%s", region, accountID, queueName)
+	queueArn = fmt.Sprintf("arn:aws:sqs:%s:%s:%s", Config.Region, accountID, queueName)
 	res, err := sqsSvc.CreateQueue(&sqs.CreateQueueInput{
 		QueueName: aws.String(queueName),
 
 		Attributes: map[string]*string{
 			"DelaySeconds":                  aws.String("60"),
 			"MessageRetentionPeriod":        aws.String("86400"),
-			"ReceiveMessageWaitTimeSeconds": aws.String(strconv.Itoa(timeout)),
+			"ReceiveMessageWaitTimeSeconds": aws.String(strconv.Itoa(Config.SqsTimeout)),
 			"Policy": aws.String(fmt.Sprintf(`{
 				"Version": "2012-10-17",
 				"Statement": [
