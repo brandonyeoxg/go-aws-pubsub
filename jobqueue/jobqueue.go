@@ -124,7 +124,7 @@ func handleJob() {
 			fmt.Println("Error handleJob: invalid message found")
 		}
 		// Push into the localDispatcher to be processed
-		// localDispatcher.Work <- &transcriptionWork{JobID: *res.Messages[0].Body}
+		localDispatcher.Work <- &transcriptionWork{JobID: *res.Messages[0].Body}
 
 		// Delete the message
 		resDel, err := sqsSvc.DeleteMessage(&sqs.DeleteMessageInput{
@@ -140,20 +140,6 @@ func handleJob() {
 }
 
 func startTranscription(msgAttrs map[string]MessageAttributeValue) {
-	// Construct the job to start transcription
-	// if err := msgAttrs["jobID"].Validate(); err != nil {
-	// 	fmt.Println("Error startTranscription:", err)
-	// 	return
-	// }
-	// if err := msgAttrs["engineID"].Validate(); err != nil {
-	// 	fmt.Println("Error startTranscription", err)
-	// 	return
-	// }
-	// if err := msgAttrs["projectID"].Validate(); err != nil {
-	// 	fmt.Println("Error startTranscription", err)
-	// 	return
-	// }
-
 	// fmt.Println("Dispatching with transcriptionJob", msgAttrs["jobID"].Value)
 	localDispatcher.Work <- &transcriptionWork{JobID: msgAttrs["jobID"].Value}
 }
